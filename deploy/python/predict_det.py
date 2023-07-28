@@ -101,19 +101,32 @@ class DetPredictor(Predictor):
                             MaskRCNN's results include 'masks': np.ndarray:
                             shape: [N, im_h, im_w]
         '''
+        use_openvino = self.args.get("use_openvino", False)
         inputs = self.preprocess(image)
         np_boxes = None
-        input_names = self.predictor.get_input_names()
-
-        for i in range(len(input_names)):
-            input_tensor = self.predictor.get_input_handle(input_names[i])
-            input_tensor.copy_from_cpu(inputs[input_names[i]])
-
+        if not use_openvino:
+            input_names = self.predictor.get_input_names()
+            for i in range(len(input_names)):
+                input_tensor = self.predictor.get_input_handle(input_names[i])
+                input_tensor.copy_from_cpu(inputs[input_names[i]])
+            
+        else:
+            input_names = self.predictor.inputs
+            input_tensors = {}
+            for i in range(len(input_names)):
+                input_tensors[input_names[i].get_any_name()] = inputs[input_names[i].get_any_name()]
+                
         t1 = time.time()
-        self.predictor.run()
-        output_names = self.predictor.get_output_names()
-        boxes_tensor = self.predictor.get_output_handle(output_names[0])
-        np_boxes = boxes_tensor.copy_to_cpu()
+        if not use_openvino:
+            print("--- det model is running on paddle ---")
+            self.predictor.run()
+            output_names = self.predictor.get_output_names()
+            boxes_tensor = self.predictor.get_output_handle(output_names[0])
+            np_boxes = boxes_tensor.copy_to_cpu()
+        else:
+            print("--- det model is running on openvino ---")
+            output_names = self.predictor.output(0)
+            np_boxes = self.predictor(input_tensors)[output_names]
         t2 = time.time()
 
         print("Inference: {} ms per batch image".format((t2 - t1) * 1000.0))

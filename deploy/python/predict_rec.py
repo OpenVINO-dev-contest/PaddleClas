@@ -54,16 +54,19 @@ class RecPredictor(Predictor):
 
     def predict(self, images, feature_normalize=True):
         use_onnx = self.args.get("use_onnx", False)
-        if not use_onnx:
+        use_openvino = self.args.get("use_openvino", False)
+        if use_onnx:
+            input_names = self.predictor.get_inputs()[0].name
+            output_names = self.predictor.get_outputs()[0].name
+        elif use_openvino:
+            output_names = self.predictor.output(0)
+        else:
             input_names = self.predictor.get_input_names()
             input_tensor = self.predictor.get_input_handle(input_names[0])
 
             output_names = self.predictor.get_output_names()
             output_tensor = self.predictor.get_output_handle(output_names[0])
-        else:
-            input_names = self.predictor.get_inputs()[0].name
-            output_names = self.predictor.get_outputs()[0].name
-
+            
         if self.benchmark:
             self.auto_logger.times.start()
         if not isinstance(images, (list, )):
@@ -75,14 +78,18 @@ class RecPredictor(Predictor):
         if self.benchmark:
             self.auto_logger.times.stamp()
 
-        if not use_onnx:
-            input_tensor.copy_from_cpu(image)
-            self.predictor.run()
-            batch_output = output_tensor.copy_to_cpu()
-        else:
+        if use_onnx:
             batch_output = self.predictor.run(
                 output_names=[output_names],
                 input_feed={input_names: image})[0]
+        elif use_openvino:
+            print("--- rec model is running on openvino ---")
+            batch_output = self.predictor([image])[output_names]
+        else:
+            input_tensor.copy_from_cpu(image)
+            self.predictor.run()
+            batch_output = output_tensor.copy_to_cpu()    
+        
 
         if self.benchmark:
             self.auto_logger.times.stamp()

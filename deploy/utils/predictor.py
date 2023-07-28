@@ -32,6 +32,9 @@ class Predictor(object):
         if self.args.get("use_onnx", False):
             self.predictor, self.config = self.create_onnx_predictor(
                 args, inference_model_dir)
+        elif self.args.get("use_openvino", False):
+            self.predictor, self.config = self.create_openvino_predictor(
+                args, inference_model_dir)
         else:
             self.predictor, self.config = self.create_paddle_predictor(
                 args, inference_model_dir)
@@ -116,4 +119,19 @@ class Predictor(object):
             if args.ir_optim:
                 config.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         predictor = ort.InferenceSession(model_file, sess_options=config)
+        return predictor, config
+    
+    def create_openvino_predictor(self, args, inference_model_dir=None):
+        import openvino.runtime as ov
+        core = ov.Core()
+        if inference_model_dir is None:
+            inference_model_dir = args.inference_model_dir
+        model_file = os.path.join(inference_model_dir, "inference.pdmodel")
+        config = {}
+        print("--- loading model to openvino runtime ---")
+        if args.use_gpu:
+            predictor = core.compile_model(model_file, "GPU")
+        else:
+            config['INFERENCE_NUM_THREADS'] = args.cpu_num_threads
+            predictor = core.compile_model(model_file, "CPU", config)
         return predictor, config
